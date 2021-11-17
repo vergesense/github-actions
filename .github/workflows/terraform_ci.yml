@@ -1,0 +1,47 @@
+---
+name: terraform_ci
+
+on:
+  workflow_call:
+
+jobs:
+  docker-compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: docker-compose config -q
+  terraform-fmt-and-validate:
+    runs-on: ubuntu-latest
+    container: hashicorp/terraform:1.0.0
+    steps:
+      - uses: actions/checkout@v2
+      - name: terraform-fmt-and-validate
+        run: |
+          terraform fmt -check -diff
+          terraform init -backend=false
+          terraform validate
+  tflint:
+    runs-on: ubuntu-latest
+    container: wata727/tflint:0.29.0
+    steps:
+      - uses: actions/checkout@v2
+      - run: tflint .
+  tfsec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: download-and-run-tfsec
+        run: |
+          curl -fsSL https://github.com/tfsec/tfsec/releases/download/v0.39.42/tfsec-linux-amd64 -o ./tfsec
+          echo '1ccd5d719b7aee777908db4d6c142a566e784a3eb0d954900c15db2b8015b2d7  ./tfsec' | sha256sum -c
+          chmod 755 ./tfsec
+          ./tfsec .
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.x
+      - run: pip install yamllint==1.26.3
+      - run: yamllint .
