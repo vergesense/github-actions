@@ -1,0 +1,83 @@
+---
+name: docker_build_scan_push
+
+on:
+  workflow_call:
+    inputs:
+      image-repo-uri:
+        required: true
+        type: string
+      image-version:
+        required: true
+        type: string
+      aws-region:
+        required: true
+        type: string
+    secrets:
+      aws-access-key-id:
+        required: true
+      aws-secret-access-key:
+        required: true
+
+
+jobs:
+  build-test-scan-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: set-vars
+        id: vars
+        with:
+          IMAGE_REPO_URI: ${{ inputs.image-repo-uri }}
+          IMAGE_VERSION: ${{ inputs.image-version }}
+        run: |
+          echo "::set-output name=IMAGE_VERSION::$IMAGE_VERSION"
+          echo "::set-output name=IMAGE_REPO_URI::$IMAGE_REPO_URI"
+          echo "::set-output name=IMAGE_TAG::$IMAGE_REPO_URI:$IMAGE_VERSION"
+          echo '::set-output name=GOSS_VERSION::0.3.16'
+          echo '::set-output name=GOSS_URL::https://github.com/aelsabbahy/goss/releases/download'
+          echo '::set-output name=GOSS_SHA256::827e354b48f93bce933f5efcd1f00dc82569c42a179cf2d384b040d8a80bfbfb'
+          echo '::set-output name=DGOSS_SHA256::384d5f6eb5a8f11df0da838cb059f0fdfb272469f275c5ce17d00ac2ae34ef05'
+      - name: docker-build
+        run: docker build . -t "${{ steps.vars.outputs.IMAGE_TAG }}"
+      - name: install-goss
+        run: |
+          curl -fsSL "${{ steps.vars.outputs.GOSS_URL }}/v${{ steps.vars.outputs.GOSS_VERSION }}/goss-linux-amd64" -o goss
+          curl -fsSL "${{ steps.vars.outputs.GOSS_URL }}/v${{ steps.vars.outputs.GOSS_VERSION }}/dgoss" -o dgoss
+          echo "${{ steps.vars.outputs.GOSS_SHA256 }}  goss" | sha256sum -c
+          echo "${{ steps.vars.outputs.DGOSS_SHA256 }}  dgoss" | sha256sum -c
+          chmod 0755 goss dgoss
+      - name: goss-testing
+        run: |
+          export GOSS_PATH=./goss
+          ./dgoss run -it -p 443:443 "${{ steps.vars.outputs.IMAGE_TAG }}"
+      - name: run trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.0.20
+        with:
+          image-ref: "${{ steps.vars.outputs.IMAGE_TAG }}"
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+      - name: configure-aws-creds
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: login-ecr
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: docker-image-push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker image push "${{ steps.vars.outputs.IMAGE_TAG }}"
+      - name: image-version-parameter-store-update
+        if: github.ref == 'refs/heads/main'
+        run: |
+          aws ssm put-parameter --name /images/$GITHUB_REPOSITORY/IMAGE_VERSION  \
+          --description "Used by CI/CD, image version that will be deployed by deployment jobs" \
+          --value "${{ steps.vars.outputs.IMAGE_VERSION }}" \
+          --type String \
+          --overwrite
