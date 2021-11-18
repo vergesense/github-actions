@@ -1,5 +1,5 @@
 ---
-name: docker_build_scan_push
+name: docker_docker_build_test_scan_push
 
 on:
   workflow_call:
@@ -13,6 +13,9 @@ on:
       aws-region:
         required: true
         type: string
+      goss-command:
+        required: true
+        type: string
     secrets:
       aws-access-key-id:
         required: true
@@ -21,16 +24,15 @@ on:
 
 
 jobs:
-  build-test-scan-push:
+  docker_build_test_scan_push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: set-vars
         id: vars
-        with:
-          IMAGE_REPO_URI: ${{ inputs.image-repo-uri }}
-          IMAGE_VERSION: ${{ inputs.image-version }}
         run: |
+          IMAGE_REPO_URI="${{ inputs.image-repo-uri }}"
+          IMAGE_VERSION="${{ inputs.image-version }}"
           echo "::set-output name=IMAGE_VERSION::$IMAGE_VERSION"
           echo "::set-output name=IMAGE_REPO_URI::$IMAGE_REPO_URI"
           echo "::set-output name=IMAGE_TAG::$IMAGE_REPO_URI:$IMAGE_VERSION"
@@ -50,7 +52,7 @@ jobs:
       - name: goss-testing
         run: |
           export GOSS_PATH=./goss
-          ./dgoss run -it -p 443:443 "${{ steps.vars.outputs.IMAGE_TAG }}"
+          ${{ inputs.goss-command }}
       - name: run trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.0.20
         with:
@@ -73,11 +75,11 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           docker image push "${{ steps.vars.outputs.IMAGE_TAG }}"
-      - name: image-version-parameter-store-update
-        if: github.ref == 'refs/heads/main'
-        run: |
-          aws ssm put-parameter --name /images/$GITHUB_REPOSITORY/IMAGE_VERSION  \
-          --description "Used by CI/CD, image version that will be deployed by deployment jobs" \
-          --value "${{ steps.vars.outputs.IMAGE_VERSION }}" \
-          --type String \
-          --overwrite
+      # - name: image-version-parameter-store-update
+      #   if: github.ref == 'refs/heads/main'
+      #   run: |
+      #     aws ssm put-parameter --name /images/$GITHUB_REPOSITORY/IMAGE_VERSION  \
+      #     --description "Used by CI/CD, image version that will be deployed by deployment jobs" \
+      #     --value "${{ steps.vars.outputs.IMAGE_VERSION }}" \
+      #     --type String \
+      #     --overwrite
