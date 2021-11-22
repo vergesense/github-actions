@@ -1,0 +1,22 @@
+---
+name: docker_lint
+
+on:
+  workflow_call:
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    container: hadolint/hadolint:v2.7.0-alpine
+    steps:
+      - uses: actions/checkout@v2
+      - run: hadolint ./Dockerfile
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.x
+      - run: pip install yamllint==1.26.3
+      - run: yamllint .
