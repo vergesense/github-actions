@@ -52,9 +52,7 @@ jobs:
       - name: goss-testing
         run: |
           export GOSS_PATH=./goss
-          IMAGE_REPO_URI="${{ inputs.image-repo-uri }}"
-          IMAGE_VERSION="${{ inputs.image-version }}"
-          ${{ inputs.goss-command }} $IMAGE_REPO_URI:$IMAGE_VERSION
+          ${{ inputs.goss-command }} "${{ steps.vars.outputs.IMAGE_TAG }}"
       - name: run trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.0.20
         with:
